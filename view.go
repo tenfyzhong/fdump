@@ -816,6 +816,7 @@ func (v *view) help() {
 
 	table := tview.NewTable()
 	table.SetBorder(true)
+	table.SetTitle(" help ")
 	table.SetFixed(1, 0)
 	for column, t := range title {
 		cell := tview.NewTableCell(t).
