@@ -36,26 +36,26 @@ func decode(net, transport gopacket.Flow, buf []byte) (bodies []interface{}, n i
 	return
 }
 
-func brief(m *fdump.Record) []string {
-	if m == nil || len(m.Bodies) == 0 {
+func brief(record *fdump.Record) []string {
+	if record == nil || len(record.Bodies) == 0 {
 		return nil
 	}
-	str, ok := m.Bodies[0].(string)
+	str, ok := record.Bodies[0].(string)
 	if !ok {
 		return nil
 	}
 	return []string{str[:10]}
 }
 
-func detail(m *fdump.Record) string {
-	str, ok := m.Bodies[0].(string)
+func detail(record *fdump.Record) string {
+	str, ok := record.Bodies[0].(string)
 	if !ok {
 		return ""
 	}
 	return str
 }
 
-func postSend(conn net.Conn, model *fdump.Record) error {
+func postSend(conn net.Conn, record *fdump.Record) error {
 	lenBuf := make([]byte, 4)
 	lenLen := 0
 	for lenLen < 4 {

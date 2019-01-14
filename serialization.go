@@ -29,11 +29,11 @@ func (s serialization) Transport() (gopacket.Flow, error) {
 	return transport, err
 }
 
-func message2Serialization(m *Record) *serialization {
-	netSrc := m.Net.Src()
-	netDst := m.Net.Dst()
-	transportSrc := m.Transport.Src()
-	transportDst := m.Transport.Dst()
+func message2Serialization(record *Record) *serialization {
+	netSrc := record.Net.Src()
+	netDst := record.Net.Dst()
+	transportSrc := record.Transport.Src()
+	transportDst := record.Transport.Dst()
 	return &serialization{
 		NetSrcRaw:        netSrc.Raw(),
 		NetDstRaw:        netDst.Raw(),
@@ -43,7 +43,7 @@ func message2Serialization(m *Record) *serialization {
 		TransportDstRaw:  transportDst.Raw(),
 		TransportSrcType: transportSrc.EndpointType(),
 		TransportDstType: transportDst.EndpointType(),
-		Seen:             m.Seen,
-		Buffer:           m.Buffer,
+		Seen:             record.Seen,
+		Buffer:           record.Buffer,
 	}
 }

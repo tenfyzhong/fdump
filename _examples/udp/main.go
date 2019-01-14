@@ -59,20 +59,20 @@ func decode(net, transport gopacket.Flow, buf []byte) (bodies []interface{}, n i
 	return
 }
 
-func brief(m *fdump.Record) []string {
-	if m == nil || len(m.Bodies) == 0 {
+func brief(record *fdump.Record) []string {
+	if record == nil || len(record.Bodies) == 0 {
 		return nil
 	}
 
-	obj, ok := m.Bodies[0].(*proto.Proto)
+	obj, ok := record.Bodies[0].(*proto.Proto)
 	if !ok {
 		return nil
 	}
 
 	result := make([]string, 4)
-	src := fmt.Sprintf("%s:%s", getIP(m.Net.Src()), m.Transport.Src().String())
+	src := fmt.Sprintf("%s:%s", getIP(record.Net.Src()), record.Transport.Src().String())
 	result[0] = src
-	dst := fmt.Sprintf("%s:%s", getIP(m.Net.Dst()), m.Transport.Dst().String())
+	dst := fmt.Sprintf("%s:%s", getIP(record.Net.Dst()), record.Transport.Dst().String())
 	result[1] = dst
 	result[2] = obj.Whoami
 	result[3] = fmt.Sprintf("%d", obj.N)
@@ -88,13 +88,13 @@ func getIP(endpoint gopacket.Endpoint) string {
 	return str
 }
 
-func detail(m *fdump.Record) string {
-	if m == nil || len(m.Bodies) == 0 {
-		log.Debugf("m is nil or bodies is empty, m: %v", m)
+func detail(record *fdump.Record) string {
+	if record == nil || len(record.Bodies) == 0 {
+		log.Debugf("record is nil or bodies is empty, record: %v", record)
 		return ""
 	}
 
-	obj, ok := m.Bodies[0].(*proto.Proto)
+	obj, ok := record.Bodies[0].(*proto.Proto)
 	if !ok {
 		log.Debugf("bodies[0] is not a Proto")
 		return ""
@@ -109,7 +109,7 @@ func detail(m *fdump.Record) string {
 	return string(buf)
 }
 
-func postSend(conn net.Conn, model *fdump.Record) error {
+func postSend(conn net.Conn, record *fdump.Record) error {
 	recvBuf := make([]byte, 65535)
 	conn.Read(recvBuf)
 	return nil

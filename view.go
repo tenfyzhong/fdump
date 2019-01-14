@@ -17,13 +17,13 @@ import (
 	"github.com/rivo/tview"
 )
 
-// SidebarFunc every decoded model will call this function to get the strings
+// SidebarFunc every decoded record will call this function to get the strings
 // show in the sidebar.
-type SidebarFunc func(m *Record) []string
+type SidebarFunc func(record *Record) []string
 
 // DetailFunc it will called when type `Enter` key to get the detail message of
-// the model
-type DetailFunc func(m *Record) string
+// the record
+type DetailFunc func(record *Record) string
 
 // SidebarColumnAttribute the sidebar column attribute
 type SidebarColumnAttribute struct {
@@ -32,8 +32,8 @@ type SidebarColumnAttribute struct {
 }
 
 type message struct {
-	Seq   int32
-	Model *Record
+	Seq    int32
+	Record *Record
 }
 
 const (
@@ -77,7 +77,7 @@ type view struct {
 
 	status uint64
 
-	multis map[int]bool // multiple model selected rows
+	multis map[int]bool // multiple selected rows
 }
 
 func newView(
@@ -314,8 +314,8 @@ func (v *view) focusMain(row int) {
 		return
 	}
 
-	m := rm.Model
-	detail := v.detailFunc(m)
+	record := rm.Record
+	detail := v.detailFunc(record)
 
 	_, _, width, _ := v.grid.GetRect()
 	if width <= 2*v.sidebarWidth {
@@ -359,39 +359,39 @@ func (v *view) createDetailPage() {
 	v.pages.AddPage("detail", v.detailPageView, true, false)
 }
 
-func (v *view) Update(m *Record) {
-	if m == nil || isSet(v.status, bitStop) {
+func (v *view) Update(record *Record) {
+	if record == nil || isSet(v.status, bitStop) {
 		return
 	}
 
-	v.updateDraw(m)
+	v.updateDraw(record)
 }
 
 func (v *view) removeHalf() {
 	total := int(v.currentRow)
 	messages := v.messages[total/2:]
 	v.makeMessages()
-	ms := make([]*Record, len(messages))
+	records := make([]*Record, len(messages))
 	for i, m := range messages {
-		ms[i] = m.Model
+		records[i] = m.Record
 	}
-	v.redraw(ms)
+	v.redraw(records)
 
 	removed := total - len(messages)
 	v.prompt(fmt.Sprintf("%d records removed", removed))
 }
 
-func (v *view) redraw(ms []*Record) {
+func (v *view) redraw(records []*Record) {
 	v.sidebarView.Clear()
 	v.currentRow = 0
 	v.currentSeq = 0
 	v.initTitle()
-	for _, m := range ms {
-		v.drawMessage(m)
+	for _, record := range records {
+		v.drawMessage(record)
 	}
 }
 
-func (v *view) updateDraw(m *Record) {
+func (v *view) updateDraw(record *Record) {
 	v.app.QueueUpdateDraw(func() {
 		if isSet(v.status, bitStop) {
 			return
@@ -401,11 +401,11 @@ func (v *view) updateDraw(m *Record) {
 			v.removeHalf()
 		}
 
-		v.drawMessage(m)
+		v.drawMessage(record)
 	})
 }
 
-func (v *view) drawMessage(m *Record) {
+func (v *view) drawMessage(record *Record) {
 	seq := atomic.AddInt32(&v.currentSeq, 1)
 	row := atomic.AddInt32(&v.currentRow, 1)
 
@@ -417,7 +417,7 @@ func (v *view) drawMessage(m *Record) {
 		SetExpansion(1)
 	v.sidebarView.SetCell(int(row), 0, cell)
 
-	items := v.sidebarFunc(m)
+	items := v.sidebarFunc(record)
 	for column, item := range items {
 		cell := tview.NewTableCell(item).
 			SetTextColor(tcell.ColorWhite).
@@ -433,8 +433,8 @@ func (v *view) drawMessage(m *Record) {
 	}
 
 	v.messages[row-1] = &message{
-		Seq:   seq,
-		Model: m,
+		Seq:    seq,
+		Record: record,
 	}
 }
 
@@ -582,8 +582,8 @@ func (v *view) saveOrLoadModal(title, okButton string, okFunc func(string)) {
 func serialize(messages []*message, filename string) error {
 	serializations := make([]*serialization, len(messages))
 	for i, m := range messages {
-		serializations[i] = message2Serialization(m.Model)
-		for _, b := range m.Model.Bodies {
+		serializations[i] = message2Serialization(m.Record)
+		for _, b := range m.Record.Bodies {
 			gob.Register(b)
 		}
 	}
@@ -649,7 +649,7 @@ func (v *view) deserialize(filename string) ([]*Record, error) {
 			continue
 		}
 
-		m := &Record{
+		record := &Record{
 			Net:       net,
 			Transport: transport,
 			Seen:      s.Seen,
@@ -657,7 +657,7 @@ func (v *view) deserialize(filename string) ([]*Record, error) {
 			Buffer:    s.Buffer,
 		}
 
-		messages = append(messages, m)
+		messages = append(messages, record)
 	}
 
 	return messages, nil
@@ -745,8 +745,8 @@ func (v *view) selectedMessage() []*message {
 			continue
 		}
 		messages = append(messages, &message{
-			Model: m.Model,
-			Seq:   int32(r),
+			Record: m.Record,
+			Seq:    int32(r),
 		})
 	}
 
@@ -855,26 +855,26 @@ func (v *view) help() {
 
 func (v *view) replay() {
 	// get the replay items
-	models := v.replayMessages()
-	if len(models) == 0 {
+	records := v.replayRecords()
+	if len(records) == 0 {
 		return
 	}
 
-	ip := models[0].Net.Dst().String()
+	ip := records[0].Net.Dst().String()
 	// INFO(tenfyzhong) 2019-01-14 19:58
 	// localhost maybe ::1
 	// convert ::1 to 127.0.0.1 which can connect to
 	if ip == "::1" {
 		ip = "127.0.0.1"
 	}
-	port := models[0].Transport.Dst().String()
+	port := records[0].Transport.Dst().String()
 
 	defaultAddr := fmt.Sprintf("%s:%s", ip, port)
 	log.Debugf("replay default addr: %s", defaultAddr)
 
 	pageName := "modal"
 
-	networkType := int(models[0].Type)
+	networkType := int(records[0].Type)
 	networks := []string{"tcp", "udp"}
 	selectedNetwork := networks[networkType]
 
@@ -895,7 +895,7 @@ func (v *view) replay() {
 		input := pathItem.(*tview.InputField)
 		addr := input.GetText()
 		log.Debugf("replay to :%s", addr)
-		go v.replaySend(selectedNetwork, addr, models)
+		go v.replaySend(selectedNetwork, addr, records)
 
 		v.destroyPage(pageName)
 	})
@@ -906,24 +906,24 @@ func (v *view) replay() {
 
 }
 
-func (v *view) replayMessages() []*Record {
-	models := make([]*Record, 0)
+func (v *view) replayRecords() []*Record {
+	records := make([]*Record, 0)
 	if isSet(v.status, bitMulti) {
 		messages := v.selectedMessage()
 		for _, m := range messages {
-			models = append(models, m.Model)
+			records = append(records, m.Record)
 		}
 	} else {
 		m := v.currentMessage()
 		if m != nil {
-			models = append(models, m.Model)
+			records = append(records, m.Record)
 		}
 	}
-	return models
+	return records
 }
 
-func (v *view) replaySend(network, addr string, models []*Record) error {
-	if len(models) == 0 {
+func (v *view) replaySend(network, addr string, records []*Record) error {
+	if len(records) == 0 {
 		return nil
 	}
 
@@ -937,14 +937,14 @@ func (v *view) replaySend(network, addr string, models []*Record) error {
 
 	// prereplay
 	if v.replayHook.PreReplay != nil {
-		err := v.replayHook.PreReplay(conn, models)
+		err := v.replayHook.PreReplay(conn, records)
 		if err != nil {
 			v.prompt(fmt.Sprintf("Prereplay failed, err: %v", err))
 			return err
 		}
 	}
 
-	for i, m := range models {
+	for i, m := range records {
 		log.Debugf("replay message seq: %d", i)
 		// presend
 		if v.replayHook.PreSend != nil {
@@ -998,8 +998,8 @@ func (v *view) rowMessage(row int) *message {
 
 	m := v.messages[int32(row-1)]
 	return &message{
-		Seq:   int32(row),
-		Model: m.Model,
+		Seq:    int32(row),
+		Record: m.Record,
 	}
 }
 

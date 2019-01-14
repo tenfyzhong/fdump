@@ -9,7 +9,7 @@ import (
 	"github.com/google/gopacket/tcpassembly"
 )
 
-type updateFunc func(m *Record)
+type updateFunc func(record *Record)
 
 type controller struct {
 	iface       string
