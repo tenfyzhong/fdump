@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -92,13 +91,13 @@ func newView(
 	v := &view{
 		app:               app,
 		capacity:          capacity,
-		messages:          make([]*message, 0, capacity),
 		sidebarFunc:       sidebarFunc,
 		detailFunc:        detailFunc,
 		decodeFunc:        decodeFunc,
 		sidebarAttributes: sidebarAttributes,
 		multis:            make(map[int]bool),
 	}
+	v.makeMessages()
 	if replayHook != nil {
 		v.replayHook.PreReplay = replayHook.PreReplay
 		v.replayHook.PreSend = replayHook.PreSend
@@ -112,6 +111,10 @@ func newView(
 	}
 
 	return v
+}
+
+func (v *view) makeMessages() {
+	v.messages = make([]*message, v.capacity)
 }
 
 func (v *view) prompt(str string) {
@@ -304,8 +307,10 @@ func (v *view) focusSidebar() {
 }
 
 func (v *view) focusMain(row int) {
+	log.Infof("focus main, row: %d", row)
 	rm := v.rowMessage(row)
 	if rm == nil {
+		log.Errorf("row: %d message is nil", row)
 		return
 	}
 
@@ -363,9 +368,9 @@ func (v *view) Update(m *Record) {
 }
 
 func (v *view) removeHalf() {
-	total := len(v.messages)
+	total := int(v.currentRow)
 	messages := v.messages[total/2:]
-	v.messages = v.messages[:0]
+	v.makeMessages()
 	ms := make([]*Record, len(messages))
 	for i, m := range messages {
 		ms[i] = m.Model
@@ -427,19 +432,10 @@ func (v *view) drawMessage(m *Record) {
 		}
 	}
 
-	v.messages = append(v.messages, &message{
+	v.messages[row-1] = &message{
 		Seq:   seq,
 		Model: m,
-	})
-}
-
-func (v *view) searchMessageByNum(num int32) *Record {
-	for _, m := range v.messages {
-		if m.Seq == num {
-			return m.Model
-		}
 	}
-	return nil
 }
 
 func (v *view) toggle(bit uint64) {
@@ -452,13 +448,15 @@ func (v *view) toggle(bit uint64) {
 }
 
 func (v *view) clear() {
-	if len(v.messages) == 0 {
+	if v.currentRow == 0 {
 		return
 	}
 
 	v.modal("Clear all?", func() {
 		v.sidebarView.Clear()
 		v.initTitle()
+		v.currentSeq = 0
+		v.currentRow = 0
 	})
 
 }
@@ -518,10 +516,10 @@ func (v *view) save() {
 		messages = v.selectedMessage()
 	} else {
 		// all
-		messages = v.messages
+		messages = v.messages[:int(v.currentRow)]
 	}
 
-	if messages == nil || len(messages) == 0 {
+	if v.currentRow == 0 {
 		v.prompt("No message, not need to save.")
 		return
 	}
@@ -704,7 +702,7 @@ func (v *view) selectAll() {
 	if !isSet(v.status, bitMulti) {
 		return
 	}
-	selecte := len(v.multis) != len(v.messages)
+	selecte := len(v.multis) != int(v.currentRow)
 	if selecte {
 		for i := 1; i <= int(v.currentRow); i++ {
 			if !v.multis[i] {
@@ -735,25 +733,20 @@ func (v *view) clearSelect() {
 
 func (v *view) selectedMessage() []*message {
 	messages := make([]*message, 0, len(v.multis))
-	seqs := make([]int, 0, len(v.multis))
+	rows := make([]int, 0, len(v.multis))
 	for m := range v.multis {
-		cell := v.sidebarView.GetCell(m, 0)
-		num, err := strconv.Atoi(cell.Text)
-		if err != nil {
-			continue
-		}
-		seqs = append(seqs, num)
+		rows = append(rows, m)
 	}
-	sort.Ints(seqs)
+	sort.Ints(rows)
 
-	for _, s := range seqs {
-		m := v.searchMessageByNum(int32(s))
+	for _, r := range rows {
+		m := v.messages[int(r-1)]
 		if m == nil {
 			continue
 		}
 		messages = append(messages, &message{
-			Model: m,
-			Seq:   int32(s),
+			Model: m.Model,
+			Seq:   int32(r),
 		})
 	}
 
@@ -867,27 +860,42 @@ func (v *view) replay() {
 		return
 	}
 
-	defaultAddr := fmt.Sprintf(
-		"%s:%s",
-		models[0].Net.Dst().String(),
-		models[0].Transport.Dst().String())
+	ip := models[0].Net.Dst().String()
+	// INFO(tenfyzhong) 2019-01-14 19:58
+	// localhost maybe ::1
+	// convert ::1 to 127.0.0.1 which can connect to
+	if ip == "::1" {
+		ip = "127.0.0.1"
+	}
+	port := models[0].Transport.Dst().String()
+
+	defaultAddr := fmt.Sprintf("%s:%s", ip, port)
 	log.Debugf("replay default addr: %s", defaultAddr)
 
 	pageName := "modal"
 
+	networkType := int(models[0].Type)
+	networks := []string{"tcp", "udp"}
+	selectedNetwork := networks[networkType]
+
 	// get server address
 	form := tview.NewForm()
 	form.SetTitle(" server address ")
+	form.AddDropDown(
+		"network",
+		[]string{"tcp", "udp"},
+		networkType,
+		func(option string, optionIndex int) { selectedNetwork = option })
 	form.AddInputField("ip:port", defaultAddr, 20, nil, nil)
 	form.SetBorder(true)
 	form.SetButtonsAlign(tview.AlignCenter)
-	v.pages.AddPage(pageName, newModal(form, 32, 7), true, true)
+	v.pages.AddPage(pageName, newModal(form, 32, 9), true, true)
 	form.AddButton("OK", func() {
 		pathItem := form.GetFormItemByLabel("ip:port")
 		input := pathItem.(*tview.InputField)
 		addr := input.GetText()
 		log.Debugf("replay to :%s", addr)
-		go v.replaySend(addr, models)
+		go v.replaySend(selectedNetwork, addr, models)
 
 		v.destroyPage(pageName)
 	})
@@ -914,9 +922,13 @@ func (v *view) replayMessages() []*Record {
 	return models
 }
 
-func (v *view) replaySend(addr string, models []*Record) error {
+func (v *view) replaySend(network, addr string, models []*Record) error {
+	if len(models) == 0 {
+		return nil
+	}
+
 	// make socket
-	conn, err := net.DialTimeout("tcp", addr, 1*time.Second)
+	conn, err := net.DialTimeout(network, addr, 1*time.Second)
 	if err != nil {
 		v.prompt(fmt.Sprintf("Dial %s failed, err: %v", addr, err))
 		return err
@@ -980,20 +992,14 @@ func (v *view) replaySend(addr string, models []*Record) error {
 }
 
 func (v *view) rowMessage(row int) *message {
-	if len(v.messages) == 0 {
+	if v.currentRow == 0 {
 		return nil
 	}
 
-	cell := v.sidebarView.GetCell(row, 0)
-	num, err := strconv.Atoi(cell.Text)
-	if err != nil {
-		return nil
-	}
-
-	m := v.searchMessageByNum(int32(num))
+	m := v.messages[int32(row-1)]
 	return &message{
-		Seq:   int32(num),
-		Model: m,
+		Seq:   int32(row),
+		Model: m.Model,
 	}
 }
 

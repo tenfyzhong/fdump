@@ -22,12 +22,12 @@ example:
 ```go
 func decode(net, transport gopacket.Flow, buf []byte) (bodies []interface{}, n int, err error) {
 	if len(buf) < 4 {
-		err = app.ErrPkgNoEnough
+		err = fdump.ErrPkgNoEnough
 		return
 	}
 	pkgLen := binary.BigEndian.Uint32(buf)
 	if uint32(len(buf)) < pkgLen {
-		err = app.ErrPkgNoEnough
+		err = fdump.ErrPkgNoEnough
 		return
 	}
 	str := string(buf[4:pkgLen])
@@ -36,7 +36,7 @@ func decode(net, transport gopacket.Flow, buf []byte) (bodies []interface{}, n i
 	return
 }
 
-func brief(m *app.Record) []string {
+func brief(m *fdump.Record) []string {
 	if m == nil || len(m.Bodies) == 0 {
 		return nil
 	}
@@ -47,7 +47,7 @@ func brief(m *app.Record) []string {
 	return []string{str[:10]}
 }
 
-func detail(m *app.Record) string {
+func detail(m *fdump.Record) string {
 	str, ok := m.Bodies[0].(string)
 	if !ok {
 		return ""
@@ -55,7 +55,7 @@ func detail(m *app.Record) string {
 	return str
 }
 
-func postSend(conn net.Conn, model *app.Record) error {
+func postSend(conn net.Conn, model *fdump.Record) error {
 	lenBuf := make([]byte, 4)
 	lenLen := 0
 	for lenLen < 4 {
@@ -89,17 +89,17 @@ func postSend(conn net.Conn, model *app.Record) error {
 
 func main() {
 	logging.SetLevel(logging.INFO, "")
-	app.Init()
-	replayHook := &app.ReplayHook{
+	fdump.Init()
+	replayHook := &fdump.ReplayHook{
 		PostSend: postSend,
 	}
-	sidebarAttributes := []*app.SidebarColumnAttribute{&app.SidebarColumnAttribute{
+	sidebarAttributes := []*fdump.SidebarColumnAttribute{&fdump.SidebarColumnAttribute{
 			Title: "Head10",
 			MaxWidth: 10,
 		},
 	}
 
-	a := app.NewApp(decode, brief, detail, replayHook, sidebarAttributes)
+	a := fdump.NewApp(decode, brief, detail, replayHook, sidebarAttributes)
 	a.Run()
 }
 ```

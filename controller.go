@@ -96,20 +96,16 @@ func (c *controller) Run() {
 			}
 
 			if packet.NetworkLayer() == nil ||
-				packet.TransportLayer() == nil ||
-				packet.TransportLayer().LayerType() != layers.LayerTypeTCP {
+				packet.TransportLayer() == nil {
 				continue
 			}
 
-			tcp := packet.TransportLayer().(*layers.TCP)
-			assembler.AssembleWithTimestamp(
-				packet.NetworkLayer().NetworkFlow(),
-				tcp,
-				packet.Metadata().Timestamp)
-			assembler.FlushWithOptions(tcpassembly.FlushOptions{
-				T:        time.Now(),
-				CloseAll: false,
-			})
+			switch packet.TransportLayer().LayerType() {
+			case layers.LayerTypeTCP:
+				c.assembleTCP(assembler, packet)
+			case layers.LayerTypeUDP:
+				c.assembleUDP(packet)
+			}
 		case <-ticker:
 			assembler.FlushWithOptions(tcpassembly.FlushOptions{
 				T:        time.Now().Add(time.Minute * -2),
@@ -117,4 +113,44 @@ func (c *controller) Run() {
 			})
 		}
 	}
+}
+
+func (c *controller) assembleTCP(assembler *tcpassembly.Assembler, packet gopacket.Packet) {
+	tcp := packet.TransportLayer().(*layers.TCP)
+	assembler.AssembleWithTimestamp(
+		packet.NetworkLayer().NetworkFlow(),
+		tcp,
+		packet.Metadata().Timestamp)
+	assembler.FlushWithOptions(tcpassembly.FlushOptions{
+		T:        time.Now(),
+		CloseAll: false,
+	})
+}
+
+func (c *controller) assembleUDP(packet gopacket.Packet) {
+	udp := packet.TransportLayer().(*layers.UDP)
+	netFlow := packet.NetworkLayer().NetworkFlow()
+	transportFlow := udp.TransportFlow()
+	payload := udp.Payload
+
+	bodies, _, err := c.factory.decodeFunc(netFlow, transportFlow, payload)
+	if err != nil {
+		log.Debugf("unpack err: %+v", err)
+		return
+	}
+
+	if len(bodies) == 0 {
+		return
+	}
+
+	r := &Record{
+		Type:      RecordTypeUDP,
+		Bodies:    bodies,
+		Net:       netFlow,
+		Transport: transportFlow,
+		Seen:      time.Now(),
+		Buffer:    payload,
+	}
+
+	c.msgChan <- r
 }
