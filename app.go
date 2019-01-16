@@ -66,11 +66,11 @@ type App struct {
 // NewApp new an App instance.
 func NewApp(
 	decodeFunc DecodeFunc,
-	sidebarFunc SidebarFunc,
+	briefFunc BriefFunc,
 	detailFunc DetailFunc,
 	replayHook *ReplayHook,
-	sidebarAttributes []*SidebarColumnAttribute) *App {
-	if decodeFunc == nil || sidebarFunc == nil || detailFunc == nil || len(sidebarAttributes) == 0 {
+	briefAttributes []*BriefColumnAttribute) *App {
+	if decodeFunc == nil || briefFunc == nil || detailFunc == nil || len(briefAttributes) == 0 {
 		return nil
 	}
 
@@ -85,11 +85,11 @@ func NewApp(
 		view: newView(
 			tapp,
 			capacity,
-			sidebarFunc,
+			briefFunc,
 			detailFunc,
 			decodeFunc,
 			replayHook,
-			sidebarAttributes),
+			briefAttributes),
 	}
 	return a
 }

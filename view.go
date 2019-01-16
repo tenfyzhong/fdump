@@ -17,16 +17,16 @@ import (
 	"github.com/rivo/tview"
 )
 
-// SidebarFunc every decoded record will call this function to get the strings
-// show in the sidebar.
-type SidebarFunc func(record *Record) []string
+// BriefFunc every decoded record will call this function get the strings to
+// show in the brief view.
+type BriefFunc func(record *Record) []string
 
-// DetailFunc it will called when type `Enter` key to get the detail message of
-// the record
+// DetailFunc will called when type `Enter` to get the detail message of
+// the record.
 type DetailFunc func(record *Record) string
 
-// SidebarColumnAttribute the sidebar column attribute
-type SidebarColumnAttribute struct {
+// BriefColumnAttribute the brief column attribute.
+type BriefColumnAttribute struct {
 	Title    string // Will show in the top line
 	MaxWidth int    // the element max width
 }
@@ -48,29 +48,34 @@ const (
 	defaultColor  = tcell.ColorDefault
 )
 
-var seqColumnAttribute = &SidebarColumnAttribute{
+const (
+	mainPageName   = "main"
+	detailPageName = "detail"
+)
+
+var seqColumnAttribute = &BriefColumnAttribute{
 	Title:    "Seq",
 	MaxWidth: 4,
 }
 
 // view controller the message to draw
 type view struct {
-	app               *tview.Application
-	pages             *tview.Pages
-	grid              *tview.Grid
-	sidebarView       *tview.Table
-	mainView          *tview.TextView
-	statusView        *tview.TextView
-	promptView        *tview.TextView
-	detailPageView    *tview.TextView // will use this view to show the detail if too narrow
-	capacity          int
-	messages          []*message
-	sidebarFunc       SidebarFunc
-	detailFunc        DetailFunc
-	decodeFunc        DecodeFunc
-	sidebarAttributes []*SidebarColumnAttribute
-	replayHook        ReplayHook
-	sidebarWidth      int
+	app             *tview.Application
+	pages           *tview.Pages
+	grid            *tview.Grid
+	briefView       *tview.Table
+	detailView      *tview.TextView
+	statusView      *tview.TextView
+	promptView      *tview.TextView
+	detailPage      *tview.TextView // will use this view to show the detail if too narrow
+	capacity        int
+	messages        []*message
+	briefFunc       BriefFunc
+	detailFunc      DetailFunc
+	decodeFunc      DecodeFunc
+	briefAttributes []*BriefColumnAttribute
+	replayHook      ReplayHook
+	briefWidth      int
 
 	currentRow int32
 
@@ -82,19 +87,19 @@ type view struct {
 func newView(
 	app *tview.Application,
 	capacity int,
-	sidebarFunc SidebarFunc,
+	briefFunc BriefFunc,
 	detailFunc DetailFunc,
 	decodeFunc DecodeFunc,
 	replayHook *ReplayHook,
-	sidebarAttributes []*SidebarColumnAttribute) *view {
+	briefAttributes []*BriefColumnAttribute) *view {
 	v := &view{
-		app:               app,
-		capacity:          capacity,
-		sidebarFunc:       sidebarFunc,
-		detailFunc:        detailFunc,
-		decodeFunc:        decodeFunc,
-		sidebarAttributes: sidebarAttributes,
-		multis:            make(map[int]bool),
+		app:             app,
+		capacity:        capacity,
+		briefFunc:       briefFunc,
+		detailFunc:      detailFunc,
+		decodeFunc:      decodeFunc,
+		briefAttributes: briefAttributes,
+		multis:          make(map[int]bool),
 	}
 	v.makeMessages()
 	if replayHook != nil {
@@ -104,9 +109,9 @@ func newView(
 		v.replayHook.PostReplay = replayHook.PostReplay
 	}
 
-	v.sidebarWidth = seqColumnAttribute.MaxWidth + 2
-	for _, attribute := range v.sidebarAttributes {
-		v.sidebarWidth += 1 + attribute.MaxWidth
+	v.briefWidth = seqColumnAttribute.MaxWidth + 2
+	for _, attribute := range v.briefAttributes {
+		v.briefWidth += 1 + attribute.MaxWidth
 	}
 
 	return v
@@ -121,9 +126,9 @@ func (v *view) prompt(str string) {
 }
 
 func (v *view) Init() {
-	v.initSidebar()
-	v.initMain()
-	v.initStatus()
+	v.initBriefView()
+	v.initDetailView()
+	v.initStatusView()
 	v.initPrompt()
 	v.initGrid()
 	v.initPages()
@@ -147,31 +152,31 @@ func (v *view) Run() error {
 }
 
 func (v *view) initTitle() {
-	for column, attribute := range append([]*SidebarColumnAttribute{seqColumnAttribute}, v.sidebarAttributes...) {
+	for column, attribute := range append([]*BriefColumnAttribute{seqColumnAttribute}, v.briefAttributes...) {
 		cell := tview.NewTableCell(attribute.Title).
 			SetTextColor(tcell.ColorYellow).
 			SetAlign(tview.AlignLeft).
 			SetSelectable(false).
 			SetMaxWidth(attribute.MaxWidth).
 			SetExpansion(1)
-		v.sidebarView.SetCell(0, column, cell)
+		v.briefView.SetCell(0, column, cell)
 	}
 }
 
-func (v *view) initSidebar() {
-	v.sidebarView = tview.NewTable().SetFixed(1, 0)
+func (v *view) initBriefView() {
+	v.briefView = tview.NewTable().SetFixed(1, 0)
 	v.initTitle()
 
-	v.sidebarView.SetBorder(false)
-	v.sidebarView.SetSelectable(true, false)
-	v.sidebarView.SetSelectedFunc(func(row, column int) {
-		v.focusMain(row)
+	v.briefView.SetBorder(false)
+	v.briefView.SetSelectable(true, false)
+	v.briefView.SetSelectedFunc(func(row, column int) {
+		v.focusDetail(row)
 	})
-	v.sidebarView.SetDoneFunc(func(key tcell.Key) {
-		v.focusSidebar()
+	v.briefView.SetDoneFunc(func(key tcell.Key) {
+		v.focusBrief()
 	})
 
-	v.sidebarView.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+	v.briefView.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		key := event.Key()
 		switch key {
 		case tcell.KeyEsc:
@@ -220,25 +225,25 @@ func (v *view) initSidebar() {
 	})
 }
 
-func (v *view) initMain() {
-	v.mainView = tview.NewTextView()
-	v.mainView.SetBorder(false)
-	v.mainView.SetWrap(true)
-	v.mainView.SetWordWrap(true)
+func (v *view) initDetailView() {
+	v.detailView = tview.NewTextView()
+	v.detailView.SetBorder(false)
+	v.detailView.SetWrap(true)
+	v.detailView.SetWordWrap(true)
 
-	v.mainView.SetInputCapture(v.detailEventHandler)
+	v.detailView.SetInputCapture(v.detailEventHandler)
 }
 
 func (v *view) detailEventHandler(event *tcell.EventKey) *tcell.EventKey {
 	key := event.Key()
 	switch key {
 	case tcell.KeyEsc:
-		v.focusSidebar()
+		v.focusBrief()
 		return nil
 	case tcell.KeyRune:
 		switch event.Rune() {
 		case 'q':
-			v.focusSidebar()
+			v.focusBrief()
 			return nil
 		case 'f':
 			v.toggle(bitFrozen)
@@ -253,7 +258,7 @@ func (v *view) detailEventHandler(event *tcell.EventKey) *tcell.EventKey {
 	return event
 }
 
-func (v *view) initStatus() {
+func (v *view) initStatusView() {
 	v.statusView = tview.NewTextView()
 	v.statusView.SetBorder(false)
 	v.statusView.SetWrap(false)
@@ -286,27 +291,27 @@ func (v *view) initGrid() {
 
 	v.grid = tview.NewGrid().
 		SetRows(-1, 1).
-		SetColumns(v.sidebarWidth, -1).
+		SetColumns(v.briefWidth, -1).
 		SetBorders(true).
-		AddItem(v.sidebarView, 0, 0, 1, 1, 0, 0, true).
-		AddItem(v.mainView, 0, 1, 1, 1, 0, 0, false).
+		AddItem(v.briefView, 0, 0, 1, 1, 0, 0, true).
+		AddItem(v.detailView, 0, 1, 1, 1, 0, 0, false).
 		AddItem(flex, 1, 0, 1, 2, 0, 0, false)
 }
 
 func (v *view) initPages() {
 	v.pages = tview.NewPages()
-	v.pages.AddPage("main", v.grid, true, true)
+	v.pages.AddPage(mainPageName, v.grid, true, true)
 }
 
-func (v *view) focusSidebar() {
-	v.mainView.Clear()
-	v.app.SetFocus(v.sidebarView)
+func (v *view) focusBrief() {
+	v.detailView.Clear()
+	v.app.SetFocus(v.briefView)
 	bitClear(&v.status, bitDetail)
 	v.redrawStatus()
 }
 
-func (v *view) focusMain(row int) {
-	log.Infof("focus main, row: %d", row)
+func (v *view) focusDetail(row int) {
+	log.Infof("focus detail, row: %d", row)
 	rm := v.rowMessage(row)
 	if rm == nil {
 		log.Errorf("row: %d message is nil", row)
@@ -317,30 +322,30 @@ func (v *view) focusMain(row int) {
 	detail := v.detailFunc(record)
 
 	_, _, width, _ := v.grid.GetRect()
-	if width <= 2*v.sidebarWidth {
-		v.focusDetailInPage(detail)
+	if width <= 2*v.briefWidth {
+		v.focusInDetailPage(detail)
 	} else {
-		v.focusDetailInMainView(detail)
+		v.focusInDetailView(detail)
 	}
 
 	bitSet(&v.status, bitDetail)
 	v.redrawStatus()
 }
 
-func (v *view) focusDetailInMainView(detail string) {
-	v.mainView.Clear()
-	fmt.Fprintf(v.mainView, detail)
-	v.app.SetFocus(v.mainView)
+func (v *view) focusInDetailView(detail string) {
+	v.detailView.Clear()
+	fmt.Fprintf(v.detailView, detail)
+	v.app.SetFocus(v.detailView)
 }
 
-func (v *view) focusDetailInPage(detail string) {
-	if !v.pages.HasPage("detail") {
+func (v *view) focusInDetailPage(detail string) {
+	if !v.pages.HasPage(detailPageName) {
 		v.createDetailPage()
 	}
-	v.detailPageView.Clear()
-	v.detailPageView.SetText(detail)
-	v.pages.SwitchToPage("detail")
-	v.pages.ShowPage("detail")
+	v.detailPage.Clear()
+	v.detailPage.SetText(detail)
+	v.pages.SwitchToPage(detailPageName)
+	v.pages.ShowPage(detailPageName)
 }
 
 func (v *view) createDetailPage() {
@@ -350,12 +355,12 @@ func (v *view) createDetailPage() {
 	textView.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		key := event.Key()
 		if key == tcell.KeyEsc || (key == tcell.KeyRune && event.Rune() == 'q') {
-			v.pages.SwitchToPage("main")
+			v.pages.SwitchToPage(mainPageName)
 		}
 		return v.detailEventHandler(event)
 	})
-	v.detailPageView = textView
-	v.pages.AddPage("detail", v.detailPageView, true, false)
+	v.detailPage = textView
+	v.pages.AddPage(detailPageName, v.detailPage, true, false)
 }
 
 func (v *view) Update(record *Record) {
@@ -364,29 +369,6 @@ func (v *view) Update(record *Record) {
 	}
 
 	v.updateDraw(record)
-}
-
-func (v *view) removeHalf() {
-	total := int(v.currentRow)
-	messages := v.messages[total/2:]
-	v.makeMessages()
-	records := make([]*Record, len(messages))
-	for i, m := range messages {
-		records[i] = m.Record
-	}
-	v.redraw(records)
-
-	removed := total - len(messages)
-	v.prompt(fmt.Sprintf("%d records removed", removed))
-}
-
-func (v *view) redraw(records []*Record) {
-	v.sidebarView.Clear()
-	v.currentRow = 0
-	v.initTitle()
-	for _, record := range records {
-		v.drawMessage(record)
-	}
 }
 
 func (v *view) updateDraw(record *Record) {
@@ -412,26 +394,49 @@ func (v *view) drawMessage(record *Record) {
 		SetSelectable(true).
 		SetMaxWidth(seqColumnAttribute.MaxWidth).
 		SetExpansion(1)
-	v.sidebarView.SetCell(int(row), 0, cell)
+	v.briefView.SetCell(int(row), 0, cell)
 
-	items := v.sidebarFunc(record)
+	items := v.briefFunc(record)
 	for column, item := range items {
 		cell := tview.NewTableCell(item).
 			SetTextColor(tcell.ColorWhite).
 			SetAlign(tview.AlignLeft).
 			SetSelectable(true).
-			SetMaxWidth(v.sidebarAttributes[column].MaxWidth).
+			SetMaxWidth(v.briefAttributes[column].MaxWidth).
 			SetExpansion(1)
-		v.sidebarView.SetCell(int(row), column+1, cell)
+		v.briefView.SetCell(int(row), column+1, cell)
 
 		if !isSet(v.status, bitDetail|bitFrozen) {
-			v.sidebarView.Select(int(row), 0)
+			v.briefView.Select(int(row), 0)
 		}
 	}
 
 	v.messages[row-1] = &message{
 		Seq:    row,
 		Record: record,
+	}
+}
+
+func (v *view) removeHalf() {
+	total := int(v.currentRow)
+	messages := v.messages[total/2:]
+	v.makeMessages()
+	records := make([]*Record, len(messages))
+	for i, m := range messages {
+		records[i] = m.Record
+	}
+	v.redraw(records)
+
+	removed := total - len(messages)
+	v.prompt(fmt.Sprintf("%d records removed", removed))
+}
+
+func (v *view) redraw(records []*Record) {
+	v.briefView.Clear()
+	v.currentRow = 0
+	v.initTitle()
+	for _, record := range records {
+		v.drawMessage(record)
 	}
 }
 
@@ -450,7 +455,7 @@ func (v *view) clear() {
 	}
 
 	v.modal("Clear all?", func() {
-		v.sidebarView.Clear()
+		v.briefView.Clear()
 		v.initTitle()
 		v.currentRow = 0
 	})
@@ -458,17 +463,18 @@ func (v *view) clear() {
 }
 
 func (v *view) modal(text string, okFunc func()) {
+	pageName := "modal"
 	modal := tview.NewModal()
 	modal.SetBorder(true)
-	modal.SetText("Clear all?")
+	modal.SetText(text)
 	modal.AddButtons([]string{"OK", "Cancel"})
 	modal.SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 		if buttonIndex == 0 {
 			okFunc()
 		}
-		v.destroyPage("modal")
+		v.destroyPage(pageName)
 	})
-	v.pages.AddPage("modal", modal, true, true)
+	v.pages.AddPage(pageName, modal, true, true)
 	v.app.SetFocus(modal)
 }
 
@@ -555,22 +561,24 @@ func (v *view) loadFile(path string) {
 }
 
 func (v *view) saveOrLoadModal(title, okButton string, okFunc func(string)) {
+	pageName := "modal"
+
 	form := tview.NewForm()
 	form.SetTitle(title)
 	form.AddInputField("path", "", 50, nil, nil)
 	form.SetBorder(true)
 	form.SetButtonsAlign(tview.AlignCenter)
-	v.pages.AddPage("modal", newModal(form, 60, 7), true, true)
+	v.pages.AddPage(pageName, nonstandardModal(form, 60, 7), true, true)
 	form.AddButton(okButton, func() {
 		pathItem := form.GetFormItemByLabel("path")
 		input := pathItem.(*tview.InputField)
 		path := input.GetText()
 		log.Debugf("%s from path: %s", title, path)
 		okFunc(path)
-		v.destroyPage("form")
+		v.destroyPage(pageName)
 	})
 	form.AddButton("Quit", func() {
-		v.destroyPage("form")
+		v.destroyPage(pageName)
 	})
 	v.app.SetFocus(form)
 }
@@ -629,7 +637,7 @@ func (v *view) deserialize(filename string) ([]*Record, error) {
 		return nil, err
 	}
 
-	messages := make([]*Record, 0, len(serializations))
+	records := make([]*Record, 0, len(serializations))
 	for _, s := range serializations {
 		net, err := s.Net()
 		if err != nil {
@@ -653,17 +661,17 @@ func (v *view) deserialize(filename string) ([]*Record, error) {
 			Buffer:    s.Buffer,
 		}
 
-		messages = append(messages, record)
+		records = append(records, record)
 	}
 
-	return messages, nil
+	return records, nil
 }
 
 func (v *view) multiSelect() {
 	if !isSet(v.status, bitMulti) {
 		return
 	}
-	row, _ := v.sidebarView.GetSelection()
+	row, _ := v.briefView.GetSelection()
 	var color tcell.Color
 	if v.multis[row] {
 		// 删除
@@ -740,20 +748,17 @@ func (v *view) selectedMessage() []*message {
 		if m == nil {
 			continue
 		}
-		messages = append(messages, &message{
-			Record: m.Record,
-			Seq:    int32(r),
-		})
+		messages = append(messages, m)
 	}
 
 	return messages
 }
 
 func (v *view) clearMulti() {
-	cellLen := len(v.sidebarAttributes)
+	cellLen := len(v.briefAttributes)
 	for m := range v.multis {
 		for i := 1; i <= cellLen; i++ {
-			v.sidebarView.GetCell(m, i).SetBackgroundColor(tcell.ColorDefault)
+			v.briefView.GetCell(m, i).SetBackgroundColor(tcell.ColorDefault)
 		}
 		delete(v.multis, m)
 	}
@@ -761,13 +766,13 @@ func (v *view) clearMulti() {
 
 func (v *view) destroyPage(name string) {
 	v.pages.RemovePage(name)
-	v.pages.SwitchToPage("main")
-	v.app.SetFocus(v.sidebarView)
+	v.pages.SwitchToPage(mainPageName)
+	v.app.SetFocus(v.briefView)
 }
 
 func (v *view) setRowBackgroundColor(row int, color tcell.Color) {
-	for i := 1; i <= len(v.sidebarAttributes); i++ {
-		v.sidebarView.GetCell(row, i).SetBackgroundColor(color)
+	for i := 1; i <= len(v.briefAttributes); i++ {
+		v.briefView.GetCell(row, i).SetBackgroundColor(color)
 	}
 }
 
@@ -786,18 +791,18 @@ func (v *view) help() {
 		[3]string{"all", "ctrl-b/PgUp", "page up"},
 		[3]string{"all", "ctrl-c", "exit"},
 		[3]string{"all", "?", "help"},
-		[3]string{"sidebar", "enter", "enter detail"},
-		[3]string{"sidebar", "Esc", "clean prompt"},
-		[3]string{"sidebar", "C", "clear"},
-		[3]string{"sidebar", "S", "save selected/all"},
-		[3]string{"sidebar", "L", "load from file"},
-		[3]string{"sidebar", "M", "toggle multiple select mode"},
-		[3]string{"sidebar", "m", "select/unselect row, select mode only"},
-		[3]string{"sidebar", "r", "revert selected, select mode only"},
-		[3]string{"sidebar", "a", "select/unselect all, select mode only"},
-		[3]string{"sidebar", "c", "clear selected, select mode only"},
-		[3]string{"sidebar", "R", "replay current/seleted row"},
-		[3]string{"main", "q/Esc", "exit detail"},
+		[3]string{"brief", "enter", "enter detail"},
+		[3]string{"brief", "Esc", "clean prompt"},
+		[3]string{"brief", "C", "clear"},
+		[3]string{"brief", "S", "save selected/all"},
+		[3]string{"brief", "L", "load from file"},
+		[3]string{"brief", "M", "toggle multiple select mode"},
+		[3]string{"brief", "m", "select/unselect row, select mode only"},
+		[3]string{"brief", "r", "revert selected, select mode only"},
+		[3]string{"brief", "a", "select/unselect all, select mode only"},
+		[3]string{"brief", "c", "clear selected, select mode only"},
+		[3]string{"brief", "R", "replay current/seleted row"},
+		[3]string{"detail", "q/Esc", "exit detail"},
 		[3]string{"help", "q/Esc", "exit help"},
 	}
 
@@ -824,16 +829,19 @@ func (v *view) help() {
 			table.SetCell(row+1, column, cell)
 		}
 	}
+
+	pageName := "help"
+
 	table.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		key := event.Key()
 		switch key {
 		case tcell.KeyEsc:
-			v.destroyPage("help")
+			v.destroyPage(pageName)
 			return nil
 		case tcell.KeyRune:
 			switch event.Rune() {
 			case 'q':
-				v.destroyPage("help")
+				v.destroyPage(pageName)
 				return nil
 			}
 		}
@@ -845,7 +853,7 @@ func (v *view) help() {
 		maxWidth += width
 	}
 
-	v.pages.AddPage("help", newModal(table, maxWidth, len(items)+3), true, true)
+	v.pages.AddPage(pageName, nonstandardModal(table, maxWidth, len(items)+3), true, true)
 	v.app.SetFocus(table)
 }
 
@@ -876,7 +884,7 @@ func (v *view) replay() {
 
 	// get server address
 	form := tview.NewForm()
-	form.SetTitle(" server address ")
+	form.SetTitle(" replay ")
 	form.AddDropDown(
 		"network",
 		[]string{"tcp", "udp"},
@@ -885,7 +893,7 @@ func (v *view) replay() {
 	form.AddInputField("ip:port", defaultAddr, 20, nil, nil)
 	form.SetBorder(true)
 	form.SetButtonsAlign(tview.AlignCenter)
-	v.pages.AddPage(pageName, newModal(form, 32, 9), true, true)
+	v.pages.AddPage(pageName, nonstandardModal(form, 32, 9), true, true)
 	form.AddButton("OK", func() {
 		pathItem := form.GetFormItemByLabel("ip:port")
 		input := pathItem.(*tview.InputField)
@@ -993,14 +1001,11 @@ func (v *view) rowMessage(row int) *message {
 	}
 
 	m := v.messages[int32(row-1)]
-	return &message{
-		Seq:    int32(row),
-		Record: m.Record,
-	}
+	return m
 }
 
 func (v *view) currentMessage() *message {
-	row, _ := v.sidebarView.GetSelection()
+	row, _ := v.briefView.GetSelection()
 	return v.rowMessage(row)
 }
 
@@ -1016,7 +1021,7 @@ func isSet(status uint64, bit uint64) bool {
 	return (status & bit) != 0
 }
 
-func newModal(p tview.Primitive, width, height int) tview.Primitive {
+func nonstandardModal(p tview.Primitive, width, height int) tview.Primitive {
 	return tview.NewFlex().
 		AddItem(nil, 0, 1, false).
 		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).

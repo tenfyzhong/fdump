@@ -22,26 +22,26 @@ func main() {
 		PostSend: postSend,
 	}
 
-	sidebarAttributes := []*fdump.SidebarColumnAttribute{
-		&fdump.SidebarColumnAttribute{
+	briefAttributes := []*fdump.BriefColumnAttribute{
+		&fdump.BriefColumnAttribute{
 			Title:    "Src",
 			MaxWidth: 21,
 		},
-		&fdump.SidebarColumnAttribute{
+		&fdump.BriefColumnAttribute{
 			Title:    "Dst",
 			MaxWidth: 21,
 		},
-		&fdump.SidebarColumnAttribute{
+		&fdump.BriefColumnAttribute{
 			Title:    "Who",
 			MaxWidth: 10,
 		},
-		&fdump.SidebarColumnAttribute{
+		&fdump.BriefColumnAttribute{
 			Title:    "N",
 			MaxWidth: 3,
 		},
 	}
 
-	a := fdump.NewApp(decode, brief, detail, replayHook, sidebarAttributes)
+	a := fdump.NewApp(decode, brief, detail, replayHook, briefAttributes)
 	a.Run()
 }
 

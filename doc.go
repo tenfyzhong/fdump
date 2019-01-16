@@ -4,9 +4,9 @@ and decode the packet. It use a tui to show the packets.
 
 Here's the way to create your packet capture application:
 1. make a function to decode the binary packet and return an Record.
-2. make a function to show the brief of a record.
-3. make a function to show the detail message of a record.
-4. (optional)Make some hook to modify the replay worker.
+2. make a function to show a brief message of the record.
+3. make a function to show a detail message of the record.
+4. (optional)Make some hook to modify the replay workflow.
 
 Example:
 
@@ -83,13 +83,13 @@ Example:
   	replayHook := &fdump.ReplayHook{
   		PostSend: postSend,
   	}
-  	sidebarAttributes := []*fdump.SidebarColumnAttribute{&fdump.SidebarColumnAttribute{
+  	briefAttributes := []*fdump.BriefColumnAttribute{&fdump.BriefColumnAttribute{
   			Title: "Head10",
   			MaxWidth: 10,
   		},
   	}
 
-  	a := fdump.NewApp(decode, brief, detail, replayHook, sidebarAttributes)
+  	a := fdump.NewApp(decode, brief, detail, replayHook, briefAttributes)
   	a.Run()
   }
 
