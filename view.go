@@ -73,7 +73,6 @@ type view struct {
 	sidebarWidth      int
 
 	currentRow int32
-	currentSeq int32
 
 	status uint64
 
@@ -384,7 +383,6 @@ func (v *view) removeHalf() {
 func (v *view) redraw(records []*Record) {
 	v.sidebarView.Clear()
 	v.currentRow = 0
-	v.currentSeq = 0
 	v.initTitle()
 	for _, record := range records {
 		v.drawMessage(record)
@@ -406,10 +404,9 @@ func (v *view) updateDraw(record *Record) {
 }
 
 func (v *view) drawMessage(record *Record) {
-	seq := atomic.AddInt32(&v.currentSeq, 1)
 	row := atomic.AddInt32(&v.currentRow, 1)
 
-	cell := tview.NewTableCell(fmt.Sprintf("%X", seq)).
+	cell := tview.NewTableCell(fmt.Sprintf("%X", row)).
 		SetTextColor(tcell.ColorGreen).
 		SetAlign(tview.AlignLeft).
 		SetSelectable(true).
@@ -433,7 +430,7 @@ func (v *view) drawMessage(record *Record) {
 	}
 
 	v.messages[row-1] = &message{
-		Seq:    seq,
+		Seq:    row,
 		Record: record,
 	}
 }
@@ -455,7 +452,6 @@ func (v *view) clear() {
 	v.modal("Clear all?", func() {
 		v.sidebarView.Clear()
 		v.initTitle()
-		v.currentSeq = 0
 		v.currentRow = 0
 	})
 
