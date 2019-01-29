@@ -674,11 +674,11 @@ func (v *view) multiSelect() {
 	row, _ := v.briefView.GetSelection()
 	var color tcell.Color
 	if v.multis[row] {
-		// 删除
+		// unselect
 		delete(v.multis, row)
 		color = defaultColor
 	} else {
-		// 添加
+		// select
 		v.multis[row] = true
 		color = selectedColor
 	}

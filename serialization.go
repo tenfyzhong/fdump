@@ -7,6 +7,7 @@ import (
 )
 
 type serialization struct {
+	Type                               RecordType
 	NetSrcRaw, NetDstRaw               []byte
 	NetSrcType, NetDstType             gopacket.EndpointType
 	TransportSrcRaw, TransportDstRaw   []byte
@@ -35,6 +36,7 @@ func message2Serialization(record *Record) *serialization {
 	transportSrc := record.Transport.Src()
 	transportDst := record.Transport.Dst()
 	return &serialization{
+		Type:             record.Type,
 		NetSrcRaw:        netSrc.Raw(),
 		NetDstRaw:        netDst.Raw(),
 		NetSrcType:       netSrc.EndpointType(),
