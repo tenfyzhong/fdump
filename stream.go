@@ -84,15 +84,15 @@ func (s *stream) Reassembled(reassemblies []tcpassembly.Reassembly) {
 				continue
 			}
 
-			r := &Record{
+			record := &Record{
 				Type:      RecordTypeTCP,
 				Bodies:    bodies,
 				Net:       s.net,
 				Transport: s.transport,
-				Seen:      time.Now(),
+				Seen:      r.Seen,
 				Buffer:    usedBuf,
 			}
-			s.factory.msgChan <- r
+			s.factory.msgChan <- record
 		}
 	}
 }
